@@ -1,13 +1,17 @@
 import asyncio
 import re
 import time
+import os
+
+from dotenv import load_dotenv
 from pathlib import Path
 
 from telegram import Bot, LinkPreviewOptions, Update
 from telegram.error import TelegramError
 from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
-BOT_TOKEN = ""
+load_dotenv(Path(__file__).with_name(".env"))
+BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID_FILE = Path(__file__).with_name("chat_id.txt")
 SUBSCRIBE_COMMAND = "!mieszkanioza"
 

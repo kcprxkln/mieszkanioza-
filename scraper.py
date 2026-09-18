@@ -1,3 +1,4 @@
+import json
 from urllib.parse import urljoin
 
 import httpx
@@ -27,7 +28,6 @@ SEARCHES = [
     ),
 ]
 GRATKA_BASE = "https://gratka.pl"
-OLX_BASE = "https://www.olx.pl"
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -88,34 +88,55 @@ def parse_gratka(html: str) -> list[dict]:
 
 
 def parse_olx(html: str) -> list[dict]:
-    soup = BeautifulSoup(html, "html.parser")
+    state = _olx_state(html)
+    if state is None:
+        print("[scraper] OLX state payload not found")
+        return []
+
     flats = []
+    for ad in state["listing"]["listing"]["ads"]:
+        params = {param["key"]: param["value"] for param in ad.get("params", [])}
+        price_info = ad.get("price", {})
+        price = price_info.get("displayValue", "")
+        if price_info.get("regularPrice", {}).get("negotiable"):
+            price += " do negocjacji"
 
-    for card in soup.select('div[data-cy="l-card"][id]'):
-        link = card.select_one('[data-testid="card-title-link"][href]')
-        if not link:
-            continue
-
-        image = card.select_one("img[src]")
-        params = card.select_one('[data-testid="blueprint-card-param-icon"]')
-        params_text = params.find_parent("span").get_text(strip=True) if params else ""
-        area, _, price_per_m2 = params_text.partition(" - ")
-        location = _text(card.select_one('[data-testid="location-date"]'))
+        location = ad.get("location", {})
+        photos = ad.get("photos") or []
         flats.append(
             {
-                "id": card["id"],
-                "title": _text(card.select_one('[data-testid="ad-card-title"] h4'))
-                or "Untitled",
-                "price": _text(card.select_one('[data-testid="ad-price"]')) or "N/A",
-                "price_per_m2": price_per_m2,
-                "area": area,
-                "location": location.rsplit(" - ", 1)[0],
-                "link": urljoin(OLX_BASE, link["href"].split("?", 1)[0]),
-                "image": image.get("src", "") if image else "",
+                "id": str(ad["id"]),
+                "title": ad.get("title") or "Untitled",
+                "price": price or "N/A",
+                "price_per_m2": params.get("price_per_m", ""),
+                "area": params.get("m", ""),
+                "location": ", ".join(
+                    part
+                    for part in (
+                        location.get("cityName"),
+                        location.get("districtName"),
+                    )
+                    if part
+                ),
+                "link": ad.get("url", ""),
+                "image": photos[0] if photos else "",
             }
         )
 
     return flats
+
+
+def _olx_state(html: str) -> dict | None:
+    marker = "window.__PRERENDERED_STATE__= "
+    start = html.find(marker)
+    if start == -1:
+        return None
+
+    try:
+        raw, _ = json.JSONDecoder().raw_decode(html[start + len(marker):])
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 def _text(node) -> str:
