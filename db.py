@@ -13,6 +13,9 @@ def init_db() -> None:
             "listing_id TEXT NOT NULL, "
             "PRIMARY KEY (platform, listing_id))"
         )
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS subscribers (chat_id INTEGER PRIMARY KEY)"
+        )
         conn.commit()
 
 
@@ -32,6 +35,20 @@ def save_listing(platform: str, listing_id: str) -> None:
             (platform, listing_id),
         )
         conn.commit()
+
+
+def add_subscriber(chat_id: int) -> None:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO subscribers (chat_id) VALUES (?)", (chat_id,)
+        )
+        conn.commit()
+
+
+def get_subscribers() -> list[int]:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        rows = conn.execute("SELECT chat_id FROM subscribers").fetchall()
+    return [row[0] for row in rows]
 
 
 def _migrate_legacy_table(conn: sqlite3.Connection) -> None:

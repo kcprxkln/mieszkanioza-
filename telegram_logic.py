@@ -10,32 +10,37 @@ from telegram import Bot, LinkPreviewOptions, Update
 from telegram.error import TelegramError
 from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
+import db
+
 load_dotenv(Path(__file__).with_name(".env"))
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-CHAT_ID_FILE = Path(__file__).with_name("chat_id.txt")
+LEGACY_CHAT_ID_FILE = Path(__file__).with_name("chat_id.txt")
 SUBSCRIBE_COMMAND = "!mieszkanioza"
 
 
 def send_alert(flat: dict) -> bool:
-    chat_id = _read_chat_id()
-    if chat_id is None:
+    chat_ids = db.get_subscribers()
+    if not chat_ids:
         print(f"[telegram] no chat registered, send {SUBSCRIBE_COMMAND} to the bot")
         return False
 
     text = _format(flat)
+    sent = False
 
-    try:
-        asyncio.run(_send(chat_id, flat.get("image", ""), text))
-        sent = True
-    except Exception as error:
-        print(f"[telegram] send failed: {error}")
-        sent = False
+    for chat_id in chat_ids:
+        try:
+            asyncio.run(_send(chat_id, flat.get("image", ""), text))
+            sent = True
+        except Exception as error:
+            print(f"[telegram] send to {chat_id} failed: {error}")
 
-    time.sleep(1)
+        time.sleep(1)
+
     return sent
 
 
 def start_listener() -> None:
+    _migrate_legacy_chat_id()
     _build_application().run_polling(stop_signals=None)
 
 
@@ -50,18 +55,21 @@ def _build_application() -> Application:
 
 
 async def _handle_subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    CHAT_ID_FILE.write_text(str(update.effective_chat.id), encoding="utf-8")
+    db.add_subscriber(update.effective_chat.id)
     await update.message.reply_text(
         "Zapisane! Od teraz nowe oferty będą wysyłane na ten czat."
     )
 
 
-def _read_chat_id() -> int | None:
+def _migrate_legacy_chat_id() -> None:
     try:
-        value = CHAT_ID_FILE.read_text(encoding="utf-8").strip()
+        value = LEGACY_CHAT_ID_FILE.read_text(encoding="utf-8").strip()
     except FileNotFoundError:
-        return None
-    return int(value) if value else None
+        return
+
+    if value:
+        db.add_subscriber(int(value))
+    LEGACY_CHAT_ID_FILE.unlink()
 
 
 def _format(flat: dict) -> str:

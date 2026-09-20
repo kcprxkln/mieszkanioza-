@@ -11,6 +11,5 @@ wheels/
 
 # Bot state
 flats.db
-chat_id.txt
 last_check.txt
 .env
